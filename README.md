@@ -15,6 +15,7 @@ To train or test on MS COCO, you'll also need:
 	```bash
 	conda config --append channels conda-forge
 ```
+
 3. Create a new virtual environment `Maskrcnn` or install additional packages in your own environment
 	
 	```bash
