@@ -1,9 +1,12 @@
 import json
 import os
 
+import mrcnn.model as modellib
 import numpy as np
+import skimage
 from PIL import Image, ImageDraw
 from mrcnn import utils
+from mrcnn import visualize
 from mrcnn.config import Config
 
 
@@ -56,6 +59,7 @@ class FurnitureConfig(Config):
 #  Dataset
 ############################################################
 class FurnitureDataset(utils.Dataset):
+
     def load_data(self, annotation_json, images_dir):
         """ Load the coco-like dataset from json
         Args:
@@ -144,3 +148,62 @@ class FurnitureDataset(utils.Dataset):
         class_ids = np.array(class_ids, dtype=np.int32)
 
         return mask, class_ids
+
+    def display_mask(self):
+        """ Display the image with mask randomly inside the dataset.
+        """
+        image_ids = np.random.choice(self.image_ids, 4)
+        for image_id in image_ids:
+            image = self.load_image(image_id)
+            mask, class_ids = self.load_mask(image_id)
+            visualize.display_top_masks(image, mask, class_ids, self.class_names)
+
+    def evaluate_mAP(self, model, config, nums):
+        """ Randomly choose n images and calculate the overall accuracy based on given model and configuration
+        Args:
+            model: The model to calculate the overall accuracy
+            config: The model configuration when doing inference
+            nums: The number of images want to test
+        Returns:
+            mAP: the mean of the accuracy after test n images
+        """
+        image_ids = np.random.choice(self.image_ids, nums)
+        APs = []
+        for image_id in image_ids:
+            # Load image and ground truth data
+            image, image_meta, gt_class_id, gt_bbox, gt_mask = modellib.load_image_gt(self, config,
+                                                                                      image_id, use_mini_mask=False)
+            molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
+            # Run object detection
+            results = model.detect([image], verbose=0)
+            r = results[0]
+            # Compute AP
+            AP, precisions, recalls, overlaps = \
+                utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
+                                 r["rois"], r["class_ids"], r["scores"], r['masks'])
+            APs.append(AP)
+            mAP = np.mean(APs)
+        return mAP
+
+############################################################
+#  Inference
+############################################################
+def inference(model, real_test_dir, dataset):
+    image_paths = []
+    for filename in os.listdir(real_test_dir):
+        if os.path.splitext(filename)[1].lower() in ['.png', '.jpg', '.jpeg']:
+            image_paths.append(os.path.join(real_test_dir, filename))
+
+    for image_path in image_paths:
+        img = skimage.io.imread(image_path)
+        img_arr = np.array(img)
+        results = model.detect([img_arr], verbose=1)
+        r = results[0]
+        visualize.display_instances(img, r['rois'], r['masks'], r['class_ids'],
+                                    dataset.class_names, r['scores'], figsize=(5, 5))
+
+
+
+
+
+
